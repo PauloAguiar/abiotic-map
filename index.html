@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#171717" />
 <title>Facility Map Viewer</title>
 <style>
   :root {
@@ -15,13 +17,45 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg);
-               font: 13px/1.4 system-ui, sans-serif; user-select: none; }
+               font: 13px/1.4 system-ui, sans-serif; user-select: none;
+               -webkit-user-select: none; overscroll-behavior: none;
+               touch-action: none; }
   #app { display: grid;
          grid-template-columns: 260px 1fr;
          grid-template-rows: 1fr 110px;
          gap: 1px;
          background: #000;
-         height: 100vh; }
+         height: 100vh; height: 100dvh; }
+
+  /* Hamburger (mobile only) */
+  #sidebarToggle {
+    position: fixed; top: 10px; left: 10px; z-index: 50;
+    display: none; background: rgba(0,0,0,0.7); color: #fff;
+    border: 1px solid #555; border-radius: 4px;
+    width: 40px; height: 40px; font-size: 20px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Mobile layout */
+  @media (max-width: 700px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: 1fr 96px; }
+    #sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: min(88vw, 340px);
+      z-index: 40; transform: translateX(-100%);
+      transition: transform 0.22s ease-out;
+      box-shadow: 0 0 18px rgba(0,0,0,0.5);
+    }
+    #sidebar.open { transform: translateX(0); }
+    #viewer { grid-column: 1; grid-row: 1; }
+    #layerStrip { grid-column: 1; grid-row: 2; }
+    #sidebarToggle { display: block; }
+    #toolbar { top: 60px !important; left: 10px; right: 10px; font-size: 11px; }
+    #toolbar label { margin-left: 6px !important; }
+    /* Slightly larger touch targets */
+    .sym-row { padding: 10px 8px; }
+    .sym-actions button, .sym-edit .del-btn { padding: 6px 10px; }
+    .layer-thumb canvas { max-height: 70px; }
+  }
 
   /* Left sidebar */
   #sidebar { grid-column: 1; grid-row: 1 / span 2;
@@ -178,6 +212,8 @@
 </style>
 </head>
 <body>
+
+<button id="sidebarToggle" title="Toggle sidebar" aria-label="Sidebar">☰</button>
 
 <div id="app">
   <!-- Left sidebar -->
@@ -568,6 +604,101 @@ window.addEventListener("mouseup", (ev) => {
     renderSymbolOverlay();
   }
 });
+
+// --- Touch (mobile) -----------------------------------------------------
+const touchState = { pinchDist: 0, pinchCenter: null, lastPan: null };
+
+function touchDist(t) {
+  const dx = t[0].clientX - t[1].clientX;
+  const dy = t[0].clientY - t[1].clientY;
+  return Math.hypot(dx, dy);
+}
+function touchMid(t) {
+  return {
+    x: (t[0].clientX + t[1].clientX) / 2,
+    y: (t[0].clientY + t[1].clientY) / 2,
+  };
+}
+
+viewer.addEventListener("touchstart", (ev) => {
+  if (!state.layers.length) return;
+  if (state.addMode && ev.touches.length === 1) {
+    const t = ev.touches[0];
+    const rect = canvas.getBoundingClientRect();
+    ev.preventDefault();
+    const x = (t.clientX - rect.left) / rect.width;
+    const y = (t.clientY - rect.top) / rect.height;
+    promptAddSymbol(x, y);
+    setAddMode(false);
+    return;
+  }
+  if (ev.touches.length === 1) {
+    ev.preventDefault();
+    state.view.panning = true;
+    state.view.lastX = ev.touches[0].clientX;
+    state.view.lastY = ev.touches[0].clientY;
+    state.view.startX = state.view.lastX;
+    state.view.startY = state.view.lastY;
+  } else if (ev.touches.length === 2) {
+    ev.preventDefault();
+    state.view.panning = false;
+    touchState.pinchDist = touchDist(ev.touches);
+    touchState.pinchCenter = touchMid(ev.touches);
+  }
+}, { passive: false });
+
+viewer.addEventListener("touchmove", (ev) => {
+  if (!state.layers.length) return;
+  if (ev.touches.length === 1 && state.view.panning) {
+    ev.preventDefault();
+    const t = ev.touches[0];
+    state.view.panX += t.clientX - state.view.lastX;
+    state.view.panY += t.clientY - state.view.lastY;
+    state.view.lastX = t.clientX; state.view.lastY = t.clientY;
+    applyView();
+  } else if (ev.touches.length === 2) {
+    ev.preventDefault();
+    const d = touchDist(ev.touches);
+    if (touchState.pinchDist > 0) {
+      const factor = d / touchState.pinchDist;
+      const c = touchState.pinchCenter || touchMid(ev.touches);
+      const vr = viewer.getBoundingClientRect();
+      const mx = c.x - vr.left, my = c.y - vr.top;
+      state.view.panX = mx - (mx - state.view.panX) * factor;
+      state.view.panY = my - (my - state.view.panY) * factor;
+      state.view.zoom *= factor;
+      applyView();
+    }
+    touchState.pinchDist = d;
+    touchState.pinchCenter = touchMid(ev.touches);
+  }
+}, { passive: false });
+
+viewer.addEventListener("touchend", (ev) => {
+  if (ev.touches.length < 2) {
+    touchState.pinchDist = 0;
+    touchState.pinchCenter = null;
+  }
+  if (ev.touches.length === 0) {
+    state.view.panning = false;
+  } else if (ev.touches.length === 1) {
+    // finger-up during pinch: continue panning from the remaining finger
+    state.view.panning = true;
+    state.view.lastX = ev.touches[0].clientX;
+    state.view.lastY = ev.touches[0].clientY;
+  }
+});
+
+// Sidebar hamburger
+$("sidebarToggle").addEventListener("click", () => {
+  $("sidebar").classList.toggle("open");
+});
+// Tap outside sidebar (on viewer) closes it on mobile.
+viewer.addEventListener("pointerdown", () => {
+  $("sidebar").classList.remove("open");
+});
+
+// --- End touch -----------------------------------------------------------
 
 window.addEventListener("mousemove", (ev) => {
   if (state.view.panning) {

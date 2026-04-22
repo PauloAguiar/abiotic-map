@@ -187,6 +187,7 @@
       <label style="margin-left: 10px; cursor: pointer;">
         <input type="checkbox" id="hiresToggle" style="vertical-align: middle;" />
         Hi-res
+        <span id="hiresStatus" style="margin-left:4px; color:#ffab40; font-size:11px;"></span>
       </label>
       <span style="margin-left: 10px; color:#888; font-size: 11px;">
         Ctrl+scroll / ↑↓ to change layer
@@ -299,6 +300,14 @@ async function loadManifest() {
       renderSymbolOverlay();
     }
     loading.classList.add("hidden");
+    // If the manifest asks for a starting symbol, center the view on it
+    // instead of the default scene recenter.
+    if (m.startSymbol) {
+      const target = state.symbols.find(
+        s => s.name.toLowerCase() === String(m.startSymbol).toLowerCase()
+      );
+      if (target) gotoSymbol(target.id);
+    }
     return true;
   } catch (err) {
     console.log("No manifest.json or failed to load:", err.message);
@@ -412,6 +421,12 @@ function drawLayer() {
   const mainImg = useHires ? L.imgHires : L.img;
   const mainW = mainImg.naturalWidth || L.w;
   const mainH = mainImg.naturalHeight || L.h;
+  // If the canvas internal dimensions are about to change, adjust the view
+  // transform so the same world area stays under the same viewer pixels —
+  // avoids the visible 4x jump when hires arrives.
+  if (canvas.width && canvas.width !== mainW) {
+    state.view.zoom *= canvas.width / mainW;
+  }
   canvas.width = mainW;
   canvas.height = mainH;
   ctx.clearRect(0, 0, mainW, mainH);
@@ -445,14 +460,30 @@ function ensureHiresLoaded(idx) {
   const L = state.layers[idx];
   if (!L || !L.hiresUrl || L.imgHires || L.hiresLoading) return;
   L.hiresLoading = true;
+  updateHiresStatus();
   const img = new Image();
   img.onload = () => {
     L.imgHires = img;
     L.hiresLoading = false;
-    if (state.current === idx) drawLayer();
+    updateHiresStatus();
+    if (state.current === idx && state.hiresEnabled) drawLayer();
   };
-  img.onerror = () => { L.hiresLoading = false; console.warn("hires failed:", L.hiresUrl); };
+  img.onerror = () => {
+    L.hiresLoading = false;
+    updateHiresStatus();
+    console.warn("hires failed:", L.hiresUrl);
+  };
   img.src = L.hiresUrl;
+}
+
+function updateHiresStatus() {
+  const el = $("hiresStatus"); if (!el) return;
+  if (!state.hiresEnabled) { el.textContent = ""; return; }
+  const L = state.layers[state.current];
+  if (!L) { el.textContent = ""; return; }
+  if (L.hiresLoading) el.textContent = "(loading…)";
+  else if (L.imgHires) el.textContent = "✓";
+  else el.textContent = "";
 }
 
 function applyView() {
@@ -591,6 +622,7 @@ function gotoLayer(i, opts = {}) {
   drawLayer();
   refreshLayerStripActive();
   updateToolbar();
+  updateHiresStatus();
   if (!opts.preserveView) {
     // Keep view unless explicitly asked to recenter.
   }
@@ -904,6 +936,7 @@ $("onionToggle").addEventListener("change", (e) => {
 $("hiresToggle").addEventListener("change", (e) => {
   state.hiresEnabled = e.target.checked;
   drawLayer(); // triggers ensureHiresLoaded if turned on
+  updateHiresStatus();
 });
 
 // Boot: try manifest first; if that fails, hide loader and show the drop-zone.

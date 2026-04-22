@@ -1,5 +1,6 @@
 {
   "title": "Abiotic Factor - Facility Map",
+  "startSymbol": "Warren Bunning",
   "layers": [
     {
       "name": "z +50..+45",
@@ -205,10 +206,17 @@
   "symbols": [
     {
       "name": "Warren Bunning",
-      "layer": 29,
+      "layer": 30,
       "x": 0.5399,
       "y": 0.4532,
       "color": "#ff5252"
+    },
+    {
+      "name": "Cafeteria",
+      "layer": 30,
+      "x": 0.47934296071157384,
+      "y": 0.45691245222299004,
+      "color": "#04ff00"
     }
   ]
 }

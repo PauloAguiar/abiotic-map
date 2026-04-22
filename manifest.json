@@ -1,0 +1,205 @@
+{
+  "title": "Abiotic Factor - Facility Map",
+  "layers": [
+    {
+      "name": "z +50..+45",
+      "file": "layers/r2048_00_z__50.._45.png",
+      "hires": "hires_layers/hires_00_z__50.._45.png"
+    },
+    {
+      "name": "z +45..+40",
+      "file": "layers/r2048_01_z__45.._40.png",
+      "hires": "hires_layers/hires_01_z__45.._40.png"
+    },
+    {
+      "name": "z +40..+35",
+      "file": "layers/r2048_02_z__40.._35.png",
+      "hires": "hires_layers/hires_02_z__40.._35.png"
+    },
+    {
+      "name": "z +35..+30",
+      "file": "layers/r2048_03_z__35.._30.png",
+      "hires": "hires_layers/hires_03_z__35.._30.png"
+    },
+    {
+      "name": "z +30..+25",
+      "file": "layers/r2048_04_z__30.._25.png",
+      "hires": "hires_layers/hires_04_z__30.._25.png"
+    },
+    {
+      "name": "z +25..+20",
+      "file": "layers/r2048_05_z__25.._20.png",
+      "hires": "hires_layers/hires_05_z__25.._20.png"
+    },
+    {
+      "name": "z +20..+15",
+      "file": "layers/r2048_06_z__20.._15.png",
+      "hires": "hires_layers/hires_06_z__20.._15.png"
+    },
+    {
+      "name": "z +15..+10",
+      "file": "layers/r2048_07_z__15.._10.png",
+      "hires": "hires_layers/hires_07_z__15.._10.png"
+    },
+    {
+      "name": "z +10..+5",
+      "file": "layers/r2048_08_z__10.._5.png",
+      "hires": "hires_layers/hires_08_z__10.._5.png"
+    },
+    {
+      "name": "z +5..+0",
+      "file": "layers/r2048_09_z__5.._0.png",
+      "hires": "hires_layers/hires_09_z__5.._0.png"
+    },
+    {
+      "name": "z +0..-5",
+      "file": "layers/r2048_10_z__0..-5.png",
+      "hires": "hires_layers/hires_10_z__0..-5.png"
+    },
+    {
+      "name": "z_-5..-10",
+      "file": "layers/r2048_11_z_-5..-10.png",
+      "hires": "hires_layers/hires_11_z_-5..-10.png"
+    },
+    {
+      "name": "z_-10..-15",
+      "file": "layers/r2048_12_z_-10..-15.png",
+      "hires": "hires_layers/hires_12_z_-10..-15.png"
+    },
+    {
+      "name": "z_-15..-20",
+      "file": "layers/r2048_13_z_-15..-20.png",
+      "hires": "hires_layers/hires_13_z_-15..-20.png"
+    },
+    {
+      "name": "z_-20..-25",
+      "file": "layers/r2048_14_z_-20..-25.png",
+      "hires": "hires_layers/hires_14_z_-20..-25.png"
+    },
+    {
+      "name": "z_-25..-30",
+      "file": "layers/r2048_15_z_-25..-30.png",
+      "hires": "hires_layers/hires_15_z_-25..-30.png"
+    },
+    {
+      "name": "z_-30..-35",
+      "file": "layers/r2048_16_z_-30..-35.png",
+      "hires": "hires_layers/hires_16_z_-30..-35.png"
+    },
+    {
+      "name": "z_-35..-40",
+      "file": "layers/r2048_17_z_-35..-40.png",
+      "hires": "hires_layers/hires_17_z_-35..-40.png"
+    },
+    {
+      "name": "z_-40..-45",
+      "file": "layers/r2048_18_z_-40..-45.png",
+      "hires": "hires_layers/hires_18_z_-40..-45.png"
+    },
+    {
+      "name": "z_-45..-50",
+      "file": "layers/r2048_19_z_-45..-50.png",
+      "hires": "hires_layers/hires_19_z_-45..-50.png"
+    },
+    {
+      "name": "z_-50..-55",
+      "file": "layers/r2048_20_z_-50..-55.png",
+      "hires": "hires_layers/hires_20_z_-50..-55.png"
+    },
+    {
+      "name": "z_-55..-60",
+      "file": "layers/r2048_21_z_-55..-60.png",
+      "hires": "hires_layers/hires_21_z_-55..-60.png"
+    },
+    {
+      "name": "z_-60..-65",
+      "file": "layers/r2048_22_z_-60..-65.png",
+      "hires": "hires_layers/hires_22_z_-60..-65.png"
+    },
+    {
+      "name": "z_-65..-70",
+      "file": "layers/r2048_23_z_-65..-70.png",
+      "hires": "hires_layers/hires_23_z_-65..-70.png"
+    },
+    {
+      "name": "z_-70..-75",
+      "file": "layers/r2048_24_z_-70..-75.png",
+      "hires": "hires_layers/hires_24_z_-70..-75.png"
+    },
+    {
+      "name": "z_-75..-80",
+      "file": "layers/r2048_25_z_-75..-80.png",
+      "hires": "hires_layers/hires_25_z_-75..-80.png"
+    },
+    {
+      "name": "z_-80..-85",
+      "file": "layers/r2048_26_z_-80..-85.png",
+      "hires": "hires_layers/hires_26_z_-80..-85.png"
+    },
+    {
+      "name": "z_-85..-90",
+      "file": "layers/r2048_27_z_-85..-90.png",
+      "hires": "hires_layers/hires_27_z_-85..-90.png"
+    },
+    {
+      "name": "z_-90..-95",
+      "file": "layers/r2048_28_z_-90..-95.png",
+      "hires": "hires_layers/hires_28_z_-90..-95.png"
+    },
+    {
+      "name": "z_-95..-100",
+      "file": "layers/r2048_29_z_-95..-100.png",
+      "hires": "hires_layers/hires_29_z_-95..-100.png"
+    },
+    {
+      "name": "z_-100..-105",
+      "file": "layers/r2048_30_z_-100..-105.png",
+      "hires": "hires_layers/hires_30_z_-100..-105.png"
+    },
+    {
+      "name": "z_-105..-110",
+      "file": "layers/r2048_31_z_-105..-110.png",
+      "hires": "hires_layers/hires_31_z_-105..-110.png"
+    },
+    {
+      "name": "z_-110..-115",
+      "file": "layers/r2048_32_z_-110..-115.png",
+      "hires": "hires_layers/hires_32_z_-110..-115.png"
+    },
+    {
+      "name": "z_-115..-120",
+      "file": "layers/r2048_33_z_-115..-120.png",
+      "hires": "hires_layers/hires_33_z_-115..-120.png"
+    },
+    {
+      "name": "z_-120..-125",
+      "file": "layers/r2048_34_z_-120..-125.png",
+      "hires": "hires_layers/hires_34_z_-120..-125.png"
+    },
+    {
+      "name": "z_-125..-130",
+      "file": "layers/r2048_35_z_-125..-130.png",
+      "hires": "hires_layers/hires_35_z_-125..-130.png"
+    },
+    {
+      "name": "z_-130..-135",
+      "file": "layers/r2048_36_z_-130..-135.png",
+      "hires": "hires_layers/hires_36_z_-130..-135.png"
+    },
+    {
+      "name": "z_-135..-140",
+      "file": "layers/r2048_37_z_-135..-140.png",
+      "hires": "hires_layers/hires_37_z_-135..-140.png"
+    },
+    {
+      "name": "z_-140..-145",
+      "file": "layers/r2048_38_z_-140..-145.png",
+      "hires": "hires_layers/hires_38_z_-140..-145.png"
+    },
+    {
+      "name": "z_-145..-150",
+      "file": "layers/r2048_39_z_-145..-150.png",
+      "hires": "hires_layers/hires_39_z_-145..-150.png"
+    }
+  ]
+}

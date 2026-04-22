@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Facility Map Viewer</title>
+<style>
+  :root {
+    --bg: #171717;
+    --panel: #242424;
+    --panel2: #2d2d2d;
+    --fg: #e2e2e2;
+    --muted: #8a8a8a;
+    --accent: #4f8cff;
+    --danger: #ff5a5a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg);
+               font: 13px/1.4 system-ui, sans-serif; user-select: none; }
+  #app { display: grid;
+         grid-template-columns: 260px 1fr;
+         grid-template-rows: 1fr 110px;
+         gap: 1px;
+         background: #000;
+         height: 100vh; }
+
+  /* Left sidebar */
+  #sidebar { grid-column: 1; grid-row: 1 / span 2;
+             background: var(--panel); overflow: hidden;
+             display: flex; flex-direction: column; }
+  #sidebar h2 { margin: 0; padding: 10px 12px; font-size: 13px;
+                text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  #sidebar .tools { padding: 6px 10px; display: flex; flex-direction: column; gap: 6px; }
+  #sidebar .tools input[type="search"] {
+    background: #1a1a1a; color: var(--fg); border: 1px solid #3a3a3a;
+    border-radius: 4px; padding: 6px 8px; font-size: 13px; outline: none; }
+  #sidebar .tools input[type="search"]:focus { border-color: var(--accent); }
+  #sidebar .row-buttons { display: flex; gap: 6px; }
+  #sidebar button {
+    flex: 1; background: #3a3a3a; color: var(--fg); border: 1px solid #555;
+    border-radius: 3px; padding: 6px 8px; cursor: pointer; font-size: 12px; }
+  #sidebar button:hover { background: #484848; }
+  #sidebar button.active { background: var(--accent); border-color: var(--accent); }
+  #symbolList { flex: 1; overflow-y: auto; padding: 4px; }
+  .sym-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+             border-radius: 3px; cursor: pointer; margin: 1px 0; }
+  .sym-row:hover { background: #333; }
+  .sym-row.active { background: #2b4a85; }
+  .sym-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; border: 1px solid #000; }
+  .sym-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sym-meta { color: var(--muted); font-size: 10px; font-family: monospace; }
+  .sym-actions { display: none; gap: 4px; }
+  .sym-row:hover .sym-actions { display: flex; }
+  .sym-actions button {
+    flex: 0 0 auto; padding: 2px 6px; font-size: 11px; min-width: 0;
+    background: #2a2a2a; border: 1px solid #444; }
+  .sym-actions .del { color: var(--danger); border-color: var(--danger); }
+  .sym-actions .del:hover { background: var(--danger); color: #fff; }
+
+  /* Main viewer */
+  #viewer { grid-column: 2; grid-row: 1; position: relative;
+            background: #0b0b0b; overflow: hidden; }
+  #viewer canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0;
+                   image-rendering: pixelated; cursor: grab; }
+  #viewer canvas.grabbing { cursor: grabbing; }
+  #viewer.adding canvas { cursor: crosshair; }
+  #symOverlay { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+  #symOverlay .pin { position: absolute; pointer-events: auto; transform: translate(-50%, -100%);
+                     cursor: pointer; user-select: none; white-space: nowrap;
+                     filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
+  #symOverlay .pin .dot { width: 14px; height: 14px; border-radius: 50%;
+                          border: 2px solid #fff; margin: 0 auto; }
+  #symOverlay .pin .lbl { background: rgba(0,0,0,0.7); color: #fff; font-size: 11px;
+                          padding: 2px 6px; border-radius: 3px; margin-top: 2px; }
+  #symOverlay .pin.active .lbl { background: var(--accent); }
+
+  #toolbar { position: absolute; top: 10px; left: 10px; z-index: 10;
+             background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 5px;
+             font-size: 12px; color: var(--muted); }
+  #toolbar .pill { display: inline-block; padding: 2px 6px; background: rgba(255,255,255,0.1);
+                   border-radius: 3px; margin-left: 8px; font-family: monospace; color: #ddd; }
+
+  #dropZone { position: absolute; inset: 0; display: flex; flex-direction: column;
+              align-items: center; justify-content: center;
+              background: rgba(0,0,0,0.92); color: #aaa;
+              text-align: center; padding: 40px; z-index: 100; }
+  #dropZone.hidden { display: none; }
+  #dropZone h1 { color: var(--fg); margin-bottom: 4px; }
+  #dropZone .hint { margin-top: 12px; font-size: 12px; }
+  #dropZone .manifest-hint { margin-top: 24px; padding-top: 18px; border-top: 1px solid #333;
+                             color: var(--muted); font-size: 11px; max-width: 640px; }
+  #dropZone.hover { background: rgba(79,140,255,0.15); color: #fff; }
+  #dropZone input { display: none; }
+  #dropZone label { background: #3a3a3a; color: var(--fg); border: 1px solid #555;
+                    border-radius: 4px; padding: 6px 14px; cursor: pointer;
+                    display: inline-block; margin-top: 8px; }
+
+  /* Layer strip */
+  #layerStrip { grid-column: 2; grid-row: 2;
+                background: var(--panel); overflow-x: auto;
+                display: flex; gap: 6px; padding: 8px; align-items: center; }
+  .layer-thumb { flex: 0 0 auto; border: 2px solid #333; border-radius: 3px;
+                 cursor: pointer; background: #000; position: relative;
+                 transition: border-color 0.1s; }
+  .layer-thumb:hover { border-color: #666; }
+  .layer-thumb.active { border-color: var(--accent); box-shadow: 0 0 8px rgba(79,140,255,0.6); }
+  .layer-thumb canvas { display: block; image-rendering: pixelated; }
+  .layer-thumb .lbl { position: absolute; left: 0; right: 0; bottom: 0;
+                      background: rgba(0,0,0,0.7); color: #fff;
+                      font-size: 10px; padding: 2px 4px; text-align: center; font-family: monospace; }
+
+  /* Modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200;
+              display: flex; align-items: center; justify-content: center; }
+  .modal { background: var(--panel); padding: 18px 22px; border-radius: 6px;
+           min-width: 320px; max-width: 90vw; }
+  .modal h3 { margin: 0 0 12px 0; }
+  .modal .field { display: block; margin: 10px 0; }
+  .modal .field label { display: block; font-size: 11px; color: var(--muted);
+                        margin-bottom: 3px; text-transform: uppercase; }
+  .modal .field input, .modal .field select {
+    width: 100%; padding: 6px 8px; background: #1a1a1a; color: var(--fg);
+    border: 1px solid #444; border-radius: 3px; outline: none; font-size: 13px; }
+  .modal .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .modal button { background: #3a3a3a; border: 1px solid #555; color: var(--fg);
+                  padding: 6px 14px; border-radius: 3px; cursor: pointer; }
+  .modal button.primary { background: var(--accent); border-color: var(--accent); }
+  .modal button.del { background: var(--danger); border-color: var(--danger); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Left sidebar -->
+  <aside id="sidebar">
+    <h2>Symbols</h2>
+    <div class="tools">
+      <input type="search" id="symSearch" placeholder="Search..." />
+      <div class="row-buttons">
+        <button id="btnAddSymbol" title="Click, then click on the map">+ Add</button>
+        <button id="btnSaveSymbols" title="Download symbols.json">Save</button>
+        <button id="btnLoadSymbols" title="Upload symbols.json">Load</button>
+      </div>
+      <div class="row-buttons">
+        <button id="btnResetSymbols" title="Discard your local edits and re-seed from manifest.json"
+                style="flex:1; background:#2a2a2a; color:var(--muted);">Reset to defaults</button>
+      </div>
+      <input type="file" id="loadSymbolsInput" accept=".json" style="display:none" />
+    </div>
+    <div id="symbolList"></div>
+  </aside>
+
+  <!-- Main canvas -->
+  <main id="viewer">
+    <div id="toolbar">
+      <span id="layerLabel">–</span>
+      <span class="pill" id="posPill">0, 0</span>
+      <span class="pill" id="zoomPill">100%</span>
+      <label style="margin-left: 10px; cursor: pointer;">
+        <input type="checkbox" id="onionToggle" checked style="vertical-align: middle;" />
+        Onion skin
+      </label>
+      <span style="margin-left: 10px; color:#888; font-size: 11px;">
+        Ctrl+scroll / ↑↓ to change layer
+      </span>
+    </div>
+    <canvas id="mainCanvas"></canvas>
+    <div id="symOverlay"></div>
+
+    <div id="dropZone">
+      <h1>Facility Map Viewer</h1>
+      <div>Drop a folder of layer PNGs, or click below to pick one.</div>
+      <label for="folderInput">Choose layer folder</label>
+      <input type="file" id="folderInput" webkitdirectory multiple />
+      <div class="manifest-hint">
+        Tip for hosting on GitHub Pages: place the PNGs in a <code>layers/</code>
+        sibling folder and add <code>manifest.json</code> next to this HTML with
+        <code>{"layers":[{"name":"Ground","file":"layers/ground.png"}, ...]}</code>.
+        The viewer will auto-load it.
+      </div>
+    </div>
+  </main>
+
+  <!-- Layer strip -->
+  <div id="layerStrip"></div>
+</div>
+
+
+<script>
+//---------------------------------------------------------------
+// State
+//---------------------------------------------------------------
+
+const state = {
+  layers: [],         // [{ name, img, w, h, thumbCanvas }]
+  current: 0,
+  symbols: [],        // [{ id, name, color, layer, x, y }]
+  symbolFilter: "",
+  addMode: false,
+  activeSymbolId: null,
+  onion: true,        // show adjacent layers faded behind current
+
+  view: { zoom: 1, panX: 0, panY: 0, panning: false, lastX: 0, lastY: 0 },
+};
+
+const SYMBOL_COLORS = [
+  "#ff5252", "#ffab40", "#ffeb3b", "#b9f6ca", "#40c4ff",
+  "#7c4dff", "#ff4081", "#cddc39", "#64ffda",
+];
+
+//---------------------------------------------------------------
+// DOM refs
+//---------------------------------------------------------------
+
+const $ = (id) => document.getElementById(id);
+const viewer = $("viewer");
+const canvas = $("mainCanvas");
+const ctx = canvas.getContext("2d");
+const overlay = $("symOverlay");
+const layerStrip = $("layerStrip");
+const symbolList = $("symbolList");
+const dropZone = $("dropZone");
+
+//---------------------------------------------------------------
+// Layer loading
+//---------------------------------------------------------------
+
+// Hold onto the manifest so "Reset to defaults" can re-seed from it.
+state.manifest = null;
+
+async function loadManifest() {
+  try {
+    const resp = await fetch("manifest.json", { cache: "no-cache" });
+    if (!resp.ok) return false;
+    const m = await resp.json();
+    if (!m.layers || !m.layers.length) return false;
+    state.manifest = m;
+    if (m.title) document.title = m.title;
+    const layers = [];
+    for (const L of m.layers) {
+      const img = await loadImageAsync(L.file);
+      layers.push({
+        name: L.name || L.file,
+        img, w: img.naturalWidth, h: img.naturalHeight,
+        hiresUrl: L.hires || null,
+        imgHires: null,
+        hiresLoading: false,
+      });
+    }
+    await setLayers(layers);
+    // Seed symbols from manifest only if the visitor has no local store yet.
+    if (m.symbols && Array.isArray(m.symbols) && !hasLocalSymbols()) {
+      state.symbols = m.symbols.map(normalizeSymbol);
+      saveSymbolsToLocalStorage();
+      renderSymbolList();
+      renderSymbolOverlay();
+    }
+    return true;
+  } catch (err) {
+    console.log("No manifest.json or failed to load:", err.message);
+    return false;
+  }
+}
+
+function loadImageAsync(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+async function loadFromFiles(files) {
+  const imgs = [...files].filter(f => /\.(png|jpe?g)$/i.test(f.name))
+                         .sort((a, b) => a.name.localeCompare(b.name));
+  if (!imgs.length) { alert("No image files found."); return; }
+  const layers = [];
+  for (const f of imgs) {
+    const url = URL.createObjectURL(f);
+    const img = await loadImageAsync(url);
+    // Use filename stripped of numeric prefix + extension as display name.
+    const base = f.name.replace(/\.[^.]+$/, "");
+    const name = base.replace(/^\d+[_-]?\s*/, "");
+    layers.push({ name: name || base, img, w: img.naturalWidth, h: img.naturalHeight });
+  }
+  await setLayers(layers);
+}
+
+function extractZ(name) {
+  const m = String(name || "").match(/([+-]?\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+async function setLayers(layers) {
+  // Try to parse a z value from each layer name and reorder bottom-up
+  // (ascending z, so the lowest floor is at index 0). Falls back to the
+  // original order if names don't contain recognizable numbers.
+  for (const L of layers) L.z = extractZ(L.name);
+  if (layers.every(L => L.z !== null)) {
+    layers.sort((a, b) => a.z - b.z);
+  }
+  state.layers = layers;
+  // Start at the layer closest to z=0.
+  let best = 0, bestDist = Infinity;
+  for (let i = 0; i < layers.length; i++) {
+    if (layers[i].z == null) continue;
+    const d = Math.abs(layers[i].z);
+    if (d < bestDist) { bestDist = d; best = i; }
+  }
+  state.current = best;
+  dropZone.classList.add("hidden");
+  buildLayerStrip();
+  drawLayer();
+  recenter();
+  loadSymbolsFromLocalStorage();
+  renderSymbolList();
+  renderSymbolOverlay();
+  refreshLayerStripActive();
+  updateToolbar();
+}
+
+document.body.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("hover"); });
+document.body.addEventListener("dragleave", e => { if (!e.relatedTarget) dropZone.classList.remove("hover"); });
+document.body.addEventListener("drop", async e => {
+  e.preventDefault(); dropZone.classList.remove("hover");
+  if (!e.dataTransfer) return;
+  const files = [];
+  async function walk(entry) {
+    if (entry.isFile) {
+      await new Promise(r => entry.file(f => { files.push(f); r(); }));
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      while (true) {
+        const chunk = await new Promise(r => reader.readEntries(r));
+        if (!chunk.length) break;
+        for (const c of chunk) await walk(c);
+      }
+    }
+  }
+  const entries = [];
+  for (const it of e.dataTransfer.items) {
+    const ent = it.webkitGetAsEntry && it.webkitGetAsEntry();
+    if (ent) entries.push(ent);
+  }
+  for (const ent of entries) await walk(ent);
+  if (files.length) loadFromFiles(files);
+  else if (e.dataTransfer.files && e.dataTransfer.files.length) loadFromFiles(e.dataTransfer.files);
+});
+
+$("folderInput").addEventListener("change", e => loadFromFiles(e.target.files));
+
+//---------------------------------------------------------------
+// Rendering
+//---------------------------------------------------------------
+
+function drawLayer() {
+  if (!state.layers.length) return;
+  const L = state.layers[state.current];
+  // Prefer hires for the current layer if it's loaded; else low-res.
+  const mainImg = L.imgHires || L.img;
+  const mainW = mainImg.naturalWidth || L.w;
+  const mainH = mainImg.naturalHeight || L.h;
+  canvas.width = mainW;
+  canvas.height = mainH;
+  ctx.clearRect(0, 0, mainW, mainH);
+  // Onion skin always uses the cheap low-res copies.
+  if (state.onion) {
+    const ONION = [
+      { d:  4, alpha: 0.08 },
+      { d:  3, alpha: 0.12 },
+      { d:  2, alpha: 0.18 },
+      { d:  1, alpha: 0.28 },
+      { d: -1, alpha: 0.20 },
+      { d: -2, alpha: 0.10 },
+    ];
+    const sorted = [...ONION].sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+    for (const { d, alpha } of sorted) {
+      const idx = state.current + d;
+      if (idx < 0 || idx >= state.layers.length) continue;
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(state.layers[idx].img, 0, 0, mainW, mainH);
+    }
+    ctx.globalAlpha = 1.0;
+  }
+  ctx.drawImage(mainImg, 0, 0, mainW, mainH);
+  applyView();
+  // Fire-and-forget hires upgrade for the current layer.
+  ensureHiresLoaded(state.current);
+}
+
+// Load & cache hires image for a layer; when ready, redraw if still current.
+function ensureHiresLoaded(idx) {
+  const L = state.layers[idx];
+  if (!L || !L.hiresUrl || L.imgHires || L.hiresLoading) return;
+  L.hiresLoading = true;
+  const img = new Image();
+  img.onload = () => {
+    L.imgHires = img;
+    L.hiresLoading = false;
+    if (state.current === idx) drawLayer();
+  };
+  img.onerror = () => { L.hiresLoading = false; console.warn("hires failed:", L.hiresUrl); };
+  img.src = L.hiresUrl;
+}
+
+function applyView() {
+  const v = state.view;
+  canvas.style.transform = `translate(${v.panX}px, ${v.panY}px) scale(${v.zoom})`;
+  renderSymbolOverlay();
+  $("zoomPill").textContent = `${Math.round(v.zoom * 100)}%`;
+}
+
+function recenter() {
+  if (!state.layers.length) return;
+  const L = state.layers[state.current];
+  const vr = viewer.getBoundingClientRect();
+  const scale = Math.min(vr.width / L.w, vr.height / L.h) * 0.95;
+  state.view.zoom = scale;
+  state.view.panX = (vr.width - L.w * scale) / 2;
+  state.view.panY = (vr.height - L.h * scale) / 2;
+  applyView();
+}
+
+window.addEventListener("resize", () => { applyView(); renderSymbolOverlay(); });
+
+//---------------------------------------------------------------
+// Pan + zoom
+//---------------------------------------------------------------
+
+canvas.addEventListener("mousedown", (ev) => {
+  if (ev.button !== 0) return;
+  if (state.addMode) {
+    ev.preventDefault();
+    const [x, y] = canvasCoords(ev);
+    promptAddSymbol(x, y);
+    setAddMode(false);
+    return;
+  }
+  state.view.panning = true;
+  state.view.lastX = ev.clientX; state.view.lastY = ev.clientY;
+  canvas.classList.add("grabbing");
+});
+
+window.addEventListener("mouseup", () => {
+  if (state.view.panning) { state.view.panning = false; canvas.classList.remove("grabbing"); }
+});
+
+window.addEventListener("mousemove", (ev) => {
+  if (state.view.panning) {
+    state.view.panX += ev.clientX - state.view.lastX;
+    state.view.panY += ev.clientY - state.view.lastY;
+    state.view.lastX = ev.clientX; state.view.lastY = ev.clientY;
+    applyView();
+  } else if (state.layers.length && ev.target === canvas) {
+    const [x, y] = canvasCoords(ev);
+    $("posPill").textContent = `${Math.round(x)}, ${Math.round(y)}`;
+  }
+});
+
+viewer.addEventListener("wheel", (ev) => {
+  if (!state.layers.length) return;
+  ev.preventDefault();
+  // Ctrl+scroll = nav layers (up = next lower floor index, down = next upper).
+  // Shift is accepted too for the same purpose.
+  if (ev.ctrlKey || ev.shiftKey) {
+    const delta = ev.deltaY > 0 ? -1 : 1;  // scroll up -> higher index (up a floor)
+    const next = Math.max(0, Math.min(state.layers.length - 1, state.current + delta));
+    if (next !== state.current) gotoLayer(next);
+    return;
+  }
+  const factor = ev.deltaY > 0 ? 0.9 : 1.1;
+  const vr = viewer.getBoundingClientRect();
+  const mx = ev.clientX - vr.left;
+  const my = ev.clientY - vr.top;
+  state.view.panX = mx - (mx - state.view.panX) * factor;
+  state.view.panY = my - (my - state.view.panY) * factor;
+  state.view.zoom *= factor;
+  applyView();
+}, { passive: false });
+
+// Keyboard shortcut: PageUp/PageDown also changes layer.
+window.addEventListener("keydown", (ev) => {
+  if (!state.layers.length) return;
+  if (ev.target && ev.target.tagName === "INPUT") return;
+  if (ev.key === "PageUp" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    gotoLayer(Math.min(state.layers.length - 1, state.current + 1));
+  } else if (ev.key === "PageDown" || ev.key === "ArrowDown") {
+    ev.preventDefault();
+    gotoLayer(Math.max(0, state.current - 1));
+  }
+});
+
+viewer.addEventListener("dblclick", () => { if (!state.addMode) recenter(); });
+
+function canvasCoords(ev) {
+  const r = canvas.getBoundingClientRect();
+  return [
+    (ev.clientX - r.left) * (canvas.width / r.width),
+    (ev.clientY - r.top)  * (canvas.height / r.height),
+  ];
+}
+
+//---------------------------------------------------------------
+// Layer strip
+//---------------------------------------------------------------
+
+function buildLayerStrip() {
+  layerStrip.innerHTML = "";
+  const maxH = 80;
+  state.layers.forEach((L, i) => {
+    const div = document.createElement("div");
+    div.className = "layer-thumb" + (i === state.current ? " active" : "");
+    div.onclick = () => gotoLayer(i);
+    const c = document.createElement("canvas");
+    const scale = Math.min(120 / L.w, maxH / L.h);
+    c.width = Math.max(20, Math.round(L.w * scale));
+    c.height = Math.max(20, Math.round(L.h * scale));
+    c.getContext("2d").drawImage(L.img, 0, 0, c.width, c.height);
+    div.appendChild(c);
+    const lbl = document.createElement("div");
+    lbl.className = "lbl"; lbl.textContent = L.name;
+    div.appendChild(lbl);
+    layerStrip.appendChild(div);
+  });
+}
+
+function refreshLayerStripActive() {
+  const kids = layerStrip.children;
+  for (let i = 0; i < kids.length; i++) kids[i].classList.toggle("active", i === state.current);
+  kids[state.current]?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
+}
+
+function gotoLayer(i, opts = {}) {
+  if (i < 0 || i >= state.layers.length) return;
+  state.current = i;
+  drawLayer();
+  refreshLayerStripActive();
+  updateToolbar();
+  if (!opts.preserveView) {
+    // Keep view unless explicitly asked to recenter.
+  }
+  renderSymbolOverlay();
+  renderSymbolList();  // highlight changes
+}
+
+//---------------------------------------------------------------
+// Symbols
+//---------------------------------------------------------------
+
+function normalizeSymbol(s) {
+  return {
+    id: s.id || crypto.randomUUID(),
+    name: String(s.name || "Unnamed"),
+    color: s.color || pickColor(),
+    layer: Math.max(0, Math.min(state.layers.length - 1, Number(s.layer) || 0)),
+    x: Number(s.x) || 0,
+    y: Number(s.y) || 0,
+  };
+}
+
+function pickColor() {
+  return SYMBOL_COLORS[state.symbols.length % SYMBOL_COLORS.length];
+}
+
+function promptAddSymbol(x, y) {
+  openSymbolModal({ x, y, layer: state.current, color: pickColor(), name: "" }, (result) => {
+    if (!result) return;
+    const sym = normalizeSymbol(result);
+    state.symbols.push(sym);
+    saveSymbolsToLocalStorage();
+    state.activeSymbolId = sym.id;
+    renderSymbolList();
+    renderSymbolOverlay();
+  });
+}
+
+function promptEditSymbol(id) {
+  const idx = state.symbols.findIndex(s => s.id === id);
+  if (idx < 0) return;
+  openSymbolModal(state.symbols[idx], (result) => {
+    if (!result) return;
+    if (result.__delete) {
+      state.symbols.splice(idx, 1);
+    } else {
+      state.symbols[idx] = normalizeSymbol({ ...state.symbols[idx], ...result });
+    }
+    saveSymbolsToLocalStorage();
+    renderSymbolList();
+    renderSymbolOverlay();
+  });
+}
+
+function setAddMode(on) {
+  state.addMode = !!on;
+  viewer.classList.toggle("adding", state.addMode);
+  $("btnAddSymbol").classList.toggle("active", state.addMode);
+  $("btnAddSymbol").textContent = state.addMode ? "Click on map..." : "+ Add";
+}
+
+$("btnAddSymbol").onclick = () => setAddMode(!state.addMode);
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.addMode) setAddMode(false); });
+
+$("symSearch").addEventListener("input", (e) => {
+  state.symbolFilter = e.target.value.toLowerCase();
+  renderSymbolList();
+});
+
+function renderSymbolList() {
+  symbolList.innerHTML = "";
+  const filter = state.symbolFilter;
+  const items = state.symbols
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => !filter || s.name.toLowerCase().includes(filter))
+    .sort((a, b) => a.s.layer - b.s.layer || a.s.name.localeCompare(b.s.name));
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "color:#666; font-size:12px; padding:10px;";
+    empty.textContent = state.symbols.length ? "No matches" : "No symbols yet. Click + Add.";
+    symbolList.appendChild(empty);
+    return;
+  }
+  for (const { s } of items) {
+    const row = document.createElement("div");
+    row.className = "sym-row" + (s.id === state.activeSymbolId ? " active" : "");
+    row.onclick = () => gotoSymbol(s.id);
+    row.ondblclick = () => promptEditSymbol(s.id);
+
+    const dot = document.createElement("span");
+    dot.className = "sym-dot"; dot.style.background = s.color;
+    row.appendChild(dot);
+
+    const lbl = document.createElement("span");
+    lbl.className = "sym-label"; lbl.textContent = s.name;
+    row.appendChild(lbl);
+
+    const meta = document.createElement("span");
+    meta.className = "sym-meta";
+    const layerName = state.layers[s.layer]?.name || `L${s.layer}`;
+    meta.textContent = layerName;
+    row.appendChild(meta);
+
+    const acts = document.createElement("span");
+    acts.className = "sym-actions";
+    const edit = document.createElement("button");
+    edit.textContent = "edit";
+    edit.onclick = (e) => { e.stopPropagation(); promptEditSymbol(s.id); };
+    const del = document.createElement("button");
+    del.className = "del"; del.textContent = "×";
+    del.title = "Delete";
+    del.onclick = (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete "${s.name}"?`)) {
+        state.symbols = state.symbols.filter(x => x.id !== s.id);
+        saveSymbolsToLocalStorage();
+        renderSymbolList();
+        renderSymbolOverlay();
+      }
+    };
+    acts.appendChild(edit); acts.appendChild(del);
+    row.appendChild(acts);
+
+    symbolList.appendChild(row);
+  }
+}
+
+function gotoSymbol(id) {
+  const s = state.symbols.find(x => x.id === id);
+  if (!s) return;
+  state.activeSymbolId = id;
+  if (s.layer !== state.current) gotoLayer(s.layer);
+  // Center & zoom to the symbol.
+  const vr = viewer.getBoundingClientRect();
+  const targetZoom = Math.max(state.view.zoom, 1.0);
+  state.view.zoom = targetZoom;
+  state.view.panX = vr.width  / 2 - s.x * targetZoom;
+  state.view.panY = vr.height / 2 - s.y * targetZoom;
+  applyView();
+  renderSymbolList();
+}
+
+function renderSymbolOverlay() {
+  overlay.innerHTML = "";
+  if (!state.layers.length) return;
+  const L = state.layers[state.current];
+  const vr = viewer.getBoundingClientRect();
+  const canvasRect = canvas.getBoundingClientRect();
+  for (const s of state.symbols) {
+    if (s.layer !== state.current) continue;
+    const sx = canvasRect.left - vr.left + (s.x / L.w) * canvasRect.width;
+    const sy = canvasRect.top  - vr.top  + (s.y / L.h) * canvasRect.height;
+    const el = document.createElement("div");
+    el.className = "pin" + (s.id === state.activeSymbolId ? " active" : "");
+    el.style.left = sx + "px"; el.style.top = sy + "px";
+    const dot = document.createElement("div"); dot.className = "dot"; dot.style.background = s.color;
+    const lbl = document.createElement("div"); lbl.className = "lbl"; lbl.textContent = s.name;
+    el.appendChild(dot); el.appendChild(lbl);
+    el.onclick = (ev) => { ev.stopPropagation(); gotoSymbol(s.id); };
+    el.oncontextmenu = (ev) => { ev.preventDefault(); promptEditSymbol(s.id); };
+    overlay.appendChild(el);
+  }
+}
+
+//---------------------------------------------------------------
+// Symbol modal
+//---------------------------------------------------------------
+
+function openSymbolModal(seed, done) {
+  const bg = document.createElement("div");
+  bg.className = "modal-bg";
+  bg.innerHTML = `
+    <div class="modal">
+      <h3>${seed.id ? "Edit Symbol" : "Add Symbol"}</h3>
+      <div class="field"><label>Name</label><input id="m_name" value="${esc(seed.name || "")}" autofocus /></div>
+      <div class="field"><label>Layer</label><select id="m_layer"></select></div>
+      <div class="field"><label>Color</label><input id="m_color" type="color" value="${seed.color || "#ff5252"}" /></div>
+      <div class="field" style="font-size:11px;color:#888">Position: ${Math.round(seed.x)}, ${Math.round(seed.y)}</div>
+      <div class="buttons">
+        ${seed.id ? '<button class="del" id="m_del">Delete</button>' : ''}
+        <button id="m_cancel">Cancel</button>
+        <button class="primary" id="m_save">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(bg);
+  const sel = bg.querySelector("#m_layer");
+  state.layers.forEach((L, i) => {
+    const opt = document.createElement("option");
+    opt.value = i; opt.textContent = L.name; if (i === (seed.layer || 0)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  function close() { bg.remove(); }
+  bg.querySelector("#m_cancel").onclick = () => { close(); done(null); };
+  bg.querySelector("#m_save").onclick = () => {
+    const result = {
+      ...seed,
+      name: bg.querySelector("#m_name").value.trim() || "Unnamed",
+      layer: parseInt(sel.value, 10),
+      color: bg.querySelector("#m_color").value,
+    };
+    close(); done(result);
+  };
+  if (seed.id) {
+    bg.querySelector("#m_del").onclick = () => {
+      if (confirm(`Delete "${seed.name}"?`)) { close(); done({ __delete: true }); }
+    };
+  }
+  bg.querySelector("#m_name").focus();
+  bg.querySelector("#m_name").select();
+  bg.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") bg.querySelector("#m_save").click();
+    else if (e.key === "Escape") bg.querySelector("#m_cancel").click();
+  });
+}
+
+function esc(s) { return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+//---------------------------------------------------------------
+// Persistence
+//---------------------------------------------------------------
+
+// Each deployment (different manifest URL) gets its own localStorage bucket
+// so multiple hosted maps don't share a symbol list.
+const LS_KEY = "final_viewer_symbols::" + location.pathname;
+
+function saveSymbolsToLocalStorage() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(state.symbols)); } catch {}
+}
+
+function hasLocalSymbols() {
+  try { return !!localStorage.getItem(LS_KEY); } catch { return false; }
+}
+
+function loadSymbolsFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) state.symbols = arr.map(normalizeSymbol);
+  } catch {}
+}
+
+function resetSymbolsToManifestDefaults() {
+  try { localStorage.removeItem(LS_KEY); } catch {}
+  const defaults = state.manifest && Array.isArray(state.manifest.symbols)
+    ? state.manifest.symbols : [];
+  state.symbols = defaults.map(normalizeSymbol);
+  saveSymbolsToLocalStorage();
+  renderSymbolList();
+  renderSymbolOverlay();
+}
+
+$("btnResetSymbols").onclick = () => {
+  const n = (state.manifest && state.manifest.symbols && state.manifest.symbols.length) || 0;
+  if (!confirm(`Discard your local changes and re-seed with ${n} default symbol(s) from manifest.json?`)) return;
+  resetSymbolsToManifestDefaults();
+};
+
+$("btnSaveSymbols").onclick = () => {
+  const blob = new Blob([JSON.stringify({ symbols: state.symbols }, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "symbols.json";
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+$("btnLoadSymbols").onclick = () => $("loadSymbolsInput").click();
+$("loadSymbolsInput").addEventListener("change", async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  try {
+    const txt = await f.text();
+    const data = JSON.parse(txt);
+    const arr = Array.isArray(data) ? data : (data.symbols || []);
+    state.symbols = arr.map(normalizeSymbol);
+    saveSymbolsToLocalStorage();
+    renderSymbolList();
+    renderSymbolOverlay();
+  } catch (err) {
+    alert("Bad symbols file: " + err.message);
+  }
+  e.target.value = "";
+});
+
+//---------------------------------------------------------------
+// Toolbar + init
+//---------------------------------------------------------------
+
+function updateToolbar() {
+  const L = state.layers[state.current];
+  $("layerLabel").textContent = L ? L.name : "–";
+}
+
+$("onionToggle").addEventListener("change", (e) => {
+  state.onion = e.target.checked;
+  drawLayer();
+});
+
+// Boot: try manifest, else wait for drop / picker.
+loadManifest().then(ok => { if (!ok) dropZone.classList.remove("hidden"); });
+</script>
+</body>
+</html>

@@ -56,6 +56,31 @@
   .sym-actions .del { color: var(--danger); border-color: var(--danger); }
   .sym-actions .del:hover { background: var(--danger); color: #fff; }
 
+  /* Inline editor for the active symbol row. */
+  .sym-row.active { background: #2b4a85; }
+  .sym-edit {
+    margin: 6px 0 2px 14px; padding: 8px;
+    background: rgba(0,0,0,0.22); border-radius: 4px;
+    display: none; flex-direction: column; gap: 6px;
+  }
+  .sym-row.active .sym-edit { display: flex; }
+  .sym-edit label { display: flex; align-items: center; gap: 6px;
+                    font-size: 11px; color: var(--muted); text-transform: uppercase; }
+  .sym-edit input[type="text"], .sym-edit select {
+    flex: 1; background: #1a1a1a; color: var(--fg); border: 1px solid #444;
+    border-radius: 3px; padding: 4px 6px; font-size: 12px; outline: none;
+  }
+  .sym-edit input[type="color"] {
+    width: 28px; height: 22px; padding: 0; background: #1a1a1a;
+    border: 1px solid #444; border-radius: 3px; cursor: pointer;
+  }
+  .sym-edit .row { display: flex; gap: 6px; align-items: center; }
+  .sym-edit .del-btn {
+    background: transparent; color: var(--danger); border: 1px solid var(--danger);
+    border-radius: 3px; padding: 3px 8px; cursor: pointer; font-size: 11px; flex: 0 0 auto;
+  }
+  .sym-edit .del-btn:hover { background: var(--danger); color: #fff; }
+
   /* Main viewer */
   #viewer { grid-column: 2; grid-row: 1; position: relative;
             background: #0b0b0b; overflow: hidden; }
@@ -521,11 +546,25 @@ canvas.addEventListener("mousedown", (ev) => {
   }
   state.view.panning = true;
   state.view.lastX = ev.clientX; state.view.lastY = ev.clientY;
+  state.view.startX = ev.clientX; state.view.startY = ev.clientY; // for click-vs-drag detection
   canvas.classList.add("grabbing");
 });
 
-window.addEventListener("mouseup", () => {
-  if (state.view.panning) { state.view.panning = false; canvas.classList.remove("grabbing"); }
+window.addEventListener("mouseup", (ev) => {
+  if (!state.view.panning) return;
+  state.view.panning = false;
+  canvas.classList.remove("grabbing");
+  // Click-without-drag on the canvas deselects the active symbol (closes its
+  // inline editor in the sidebar).
+  const moved = Math.hypot(
+    (ev.clientX - (state.view.startX ?? ev.clientX)),
+    (ev.clientY - (state.view.startY ?? ev.clientY))
+  );
+  if (moved < 3 && ev.target === canvas && state.activeSymbolId) {
+    state.activeSymbolId = null;
+    renderSymbolList();
+    renderSymbolOverlay();
+  }
 });
 
 window.addEventListener("mousemove", (ev) => {
@@ -716,10 +755,12 @@ function renderSymbolList() {
     return;
   }
   for (const { s } of items) {
+    const wrap = document.createElement("div");
+    wrap.className = "sym-wrap";
+
     const row = document.createElement("div");
     row.className = "sym-row" + (s.id === state.activeSymbolId ? " active" : "");
-    row.onclick = () => gotoSymbol(s.id);
-    row.ondblclick = () => promptEditSymbol(s.id);
+    row.__symId = s.id;
 
     const dot = document.createElement("span");
     dot.className = "sym-dot"; dot.style.background = s.color;
@@ -735,28 +776,101 @@ function renderSymbolList() {
     meta.textContent = layerName;
     row.appendChild(meta);
 
-    const acts = document.createElement("span");
-    acts.className = "sym-actions";
-    const edit = document.createElement("button");
-    edit.textContent = "edit";
-    edit.onclick = (e) => { e.stopPropagation(); promptEditSymbol(s.id); };
-    const del = document.createElement("button");
-    del.className = "del"; del.textContent = "×";
-    del.title = "Delete";
-    del.onclick = (e) => {
+    // Single-click: select + navigate (also reveals the inline editor below).
+    row.onclick = (e) => {
       e.stopPropagation();
-      if (confirm(`Delete "${s.name}"?`)) {
-        state.symbols = state.symbols.filter(x => x.id !== s.id);
-        saveSymbolsToLocalStorage();
-        renderSymbolList();
-        renderSymbolOverlay();
-      }
+      gotoSymbol(s.id);
     };
-    acts.appendChild(edit); acts.appendChild(del);
-    row.appendChild(acts);
 
-    symbolList.appendChild(row);
+    wrap.appendChild(row);
+
+    // Inline editor, shown when this is the active symbol.
+    const edit = buildInlineEditor(s);
+    wrap.appendChild(edit);
+    // Add `active` on the wrap so CSS hooks work on the row child.
+    if (s.id === state.activeSymbolId) row.classList.add("active");
+
+    symbolList.appendChild(wrap);
   }
+}
+
+// Build the per-row inline editor (displayed when row is active).
+function buildInlineEditor(s) {
+  const edit = document.createElement("div");
+  edit.className = "sym-edit" + (s.id === state.activeSymbolId ? " open" : "");
+  edit.onclick = (e) => e.stopPropagation();
+
+  const rowA = document.createElement("div");
+  rowA.className = "row";
+  const nameInput = document.createElement("input");
+  nameInput.type = "text"; nameInput.value = s.name;
+  nameInput.placeholder = "Symbol name";
+  nameInput.addEventListener("input", () => {
+    s.name = nameInput.value.trim() || "Unnamed";
+    persistAndRefreshQuick();
+  });
+  nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") nameInput.blur(); });
+  const colorInput = document.createElement("input");
+  colorInput.type = "color"; colorInput.value = s.color || "#ffffff";
+  colorInput.title = "Color";
+  colorInput.addEventListener("input", () => {
+    s.color = colorInput.value;
+    persistAndRefreshQuick();
+  });
+  rowA.appendChild(nameInput); rowA.appendChild(colorInput);
+  edit.appendChild(rowA);
+
+  const rowB = document.createElement("div");
+  rowB.className = "row";
+  const layerSel = document.createElement("select");
+  state.layers.forEach((L, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = L.name; if (i === s.layer) o.selected = true;
+    layerSel.appendChild(o);
+  });
+  layerSel.addEventListener("change", () => {
+    s.layer = parseInt(layerSel.value, 10);
+    saveSymbolsToLocalStorage();
+    // Jump with the symbol to its new layer.
+    gotoLayer(s.layer);
+    renderSymbolList();
+    renderSymbolOverlay();
+  });
+  const delBtn = document.createElement("button");
+  delBtn.className = "del-btn"; delBtn.textContent = "Delete";
+  delBtn.onclick = (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete "${s.name}"?`)) return;
+    state.symbols = state.symbols.filter(x => x.id !== s.id);
+    state.activeSymbolId = null;
+    saveSymbolsToLocalStorage();
+    renderSymbolList();
+    renderSymbolOverlay();
+  };
+  rowB.appendChild(layerSel); rowB.appendChild(delBtn);
+  edit.appendChild(rowB);
+
+  return edit;
+}
+
+// Lightweight commit path used by the inline name/color edits: persists and
+// updates the compact row + map pin without scrolling / rebuilding everything.
+function persistAndRefreshQuick() {
+  saveSymbolsToLocalStorage();
+  // Update the row's dot + label in place (avoid full rebuild to keep focus).
+  const wraps = symbolList.children;
+  for (const w of wraps) {
+    const row = w.querySelector(".sym-row");
+    const lblSpan = row && row.querySelector(".sym-label");
+    const dotSpan = row && row.querySelector(".sym-dot");
+    if (!row) continue;
+    const id = row.__symId;
+    const s = state.symbols.find(x => x.id === id);
+    if (!s) continue;
+    if (lblSpan) lblSpan.textContent = s.name;
+    if (dotSpan) dotSpan.style.background = s.color;
+  }
+  renderSymbolOverlay();
 }
 
 function gotoSymbol(id) {

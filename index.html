@@ -375,6 +375,8 @@ function extractZ(name) {
 }
 
 async function setLayers(layers) {
+  // Restore UI toggles first so the first drawLayer respects them.
+  loadOptionsFromLocalStorage();
   // Try to parse a z value from each layer name and reorder bottom-up
   // (ascending z, so the lowest floor is at index 0). Falls back to the
   // original order if names don't contain recognizable numbers.
@@ -613,7 +615,8 @@ window.addEventListener("keydown", (ev) => {
   }
 });
 
-viewer.addEventListener("dblclick", () => { if (!state.addMode) recenter(); });
+// Double-click intentionally does NOT recenter anymore. If you want to
+// recenter, call recenter() from the console or wire a toolbar button.
 
 // Return canvas-relative coordinates in NORMALIZED [0, 1] space so symbols
 // are resolution-agnostic (independent of whether hi-res is loaded).
@@ -972,7 +975,30 @@ function esc(s) { return String(s || "").replace(/[&<>"']/g, c => ({'&':'&amp;',
 
 // Each deployment (different manifest URL) gets its own localStorage bucket
 // so multiple hosted maps don't share a symbol list.
-const LS_KEY = "final_viewer_symbols::" + location.pathname;
+const LS_KEY         = "final_viewer_symbols::" + location.pathname;
+const LS_OPTIONS_KEY = "final_viewer_options::" + location.pathname;
+
+function saveOptionsToLocalStorage() {
+  try {
+    localStorage.setItem(LS_OPTIONS_KEY, JSON.stringify({
+      onion: state.onion,
+      hires: state.hiresEnabled,
+    }));
+  } catch {}
+}
+
+function loadOptionsFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(LS_OPTIONS_KEY);
+    if (!raw) return;
+    const o = JSON.parse(raw);
+    if (typeof o.onion === "boolean")  state.onion        = o.onion;
+    if (typeof o.hires === "boolean")  state.hiresEnabled = o.hires;
+    // Reflect in the UI.
+    const onE = $("onionToggle"); if (onE) onE.checked = state.onion;
+    const hiE = $("hiresToggle"); if (hiE) hiE.checked = state.hiresEnabled;
+  } catch {}
+}
 
 function saveSymbolsToLocalStorage() {
   try { localStorage.setItem(LS_KEY, JSON.stringify(state.symbols)); } catch {}
@@ -1044,11 +1070,13 @@ function updateToolbar() {
 
 $("onionToggle").addEventListener("change", (e) => {
   state.onion = e.target.checked;
+  saveOptionsToLocalStorage();
   drawLayer();
 });
 
 $("hiresToggle").addEventListener("change", (e) => {
   state.hiresEnabled = e.target.checked;
+  saveOptionsToLocalStorage();
   drawLayer(); // triggers ensureHiresLoaded if turned on
   updateHiresStatus();
 });

@@ -201,5 +201,14 @@
       "file": "layers/r2048_39_z_-145..-150.png",
       "hires": "hires_layers/hires_39_z_-145..-150.png"
     }
+  ],
+  "symbols": [
+    {
+      "name": "Warren Bunning",
+      "layer": 29,
+      "x": 0.5399,
+      "y": 0.4532,
+      "color": "#ff5252"
+    }
   ]
 }

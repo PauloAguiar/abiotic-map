@@ -64,14 +64,28 @@
   #viewer canvas.grabbing { cursor: grabbing; }
   #viewer.adding canvas { cursor: crosshair; }
   #symOverlay { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
-  #symOverlay .pin { position: absolute; pointer-events: auto; transform: translate(-50%, -100%);
-                     cursor: pointer; user-select: none; white-space: nowrap;
-                     filter: drop-shadow(0 1px 2px rgba(0,0,0,.7)); }
-  #symOverlay .pin .dot { width: 14px; height: 14px; border-radius: 50%;
-                          border: 2px solid #fff; margin: 0 auto; }
-  #symOverlay .pin .lbl { background: rgba(0,0,0,0.7); color: #fff; font-size: 11px;
-                          padding: 2px 6px; border-radius: 3px; margin-top: 2px; }
-  #symOverlay .pin.active .lbl { background: var(--accent); }
+  #symOverlay .pin {
+    position: absolute; pointer-events: auto;
+    transform: translate(-50%, -50%);
+    width: 18px; height: 18px; border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.8), 0 2px 4px rgba(0,0,0,0.5);
+    cursor: pointer;
+  }
+  #symOverlay .pin.active {
+    width: 22px; height: 22px;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px #000, 0 0 10px var(--accent);
+  }
+  #symOverlay .pin .lbl {
+    position: absolute; left: 50%; top: calc(100% + 4px);
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8); color: #fff; font-size: 11px;
+    padding: 2px 6px; border-radius: 3px; white-space: nowrap;
+    pointer-events: none; opacity: 0; transition: opacity 0.1s;
+  }
+  #symOverlay .pin:hover .lbl,
+  #symOverlay .pin.active .lbl { opacity: 1; }
 
   #toolbar { position: absolute; top: 10px; left: 10px; z-index: 10;
              background: rgba(0,0,0,0.5); padding: 6px 10px; border-radius: 5px;
@@ -79,11 +93,22 @@
   #toolbar .pill { display: inline-block; padding: 2px 6px; background: rgba(255,255,255,0.1);
                    border-radius: 3px; margin-left: 8px; font-family: monospace; color: #ddd; }
 
-  #dropZone { position: absolute; inset: 0; display: flex; flex-direction: column;
-              align-items: center; justify-content: center;
-              background: rgba(0,0,0,0.92); color: #aaa;
-              text-align: center; padding: 40px; z-index: 100; }
-  #dropZone.hidden { display: none; }
+  #dropZone, #loading {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.92); color: #aaa;
+    text-align: center; padding: 40px; z-index: 100;
+  }
+  #dropZone.hidden, #loading.hidden { display: none; }
+  #loading .spinner {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 4px solid #333; border-top-color: var(--accent);
+    animation: spin 0.9s linear infinite;
+    margin-bottom: 16px;
+  }
+  #loading .title { color: var(--fg); font-size: 18px; margin-bottom: 4px; }
+  #loading .progress { font-family: monospace; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   #dropZone h1 { color: var(--fg); margin-bottom: 4px; }
   #dropZone .hint { margin-top: 12px; font-size: 12px; }
   #dropZone .manifest-hint { margin-top: 24px; padding-top: 18px; border-top: 1px solid #333;
@@ -159,6 +184,10 @@
         <input type="checkbox" id="onionToggle" checked style="vertical-align: middle;" />
         Onion skin
       </label>
+      <label style="margin-left: 10px; cursor: pointer;">
+        <input type="checkbox" id="hiresToggle" style="vertical-align: middle;" />
+        Hi-res
+      </label>
       <span style="margin-left: 10px; color:#888; font-size: 11px;">
         Ctrl+scroll / ↑↓ to change layer
       </span>
@@ -166,7 +195,12 @@
     <canvas id="mainCanvas"></canvas>
     <div id="symOverlay"></div>
 
-    <div id="dropZone">
+    <div id="loading">
+      <div class="spinner"></div>
+      <div class="title" id="loadingTitle">Loading map…</div>
+      <div class="progress" id="loadingProgress">Fetching manifest…</div>
+    </div>
+    <div id="dropZone" class="hidden">
       <h1>Facility Map Viewer</h1>
       <div>Drop a folder of layer PNGs, or click below to pick one.</div>
       <label for="folderInput">Choose layer folder</label>
@@ -198,6 +232,7 @@ const state = {
   addMode: false,
   activeSymbolId: null,
   onion: true,        // show adjacent layers faded behind current
+  hiresEnabled: false, // opt-in: when true, upgrade to hires for current layer
 
   view: { zoom: 1, panX: 0, panY: 0, panning: false, lastX: 0, lastY: 0 },
 };
@@ -219,6 +254,11 @@ const overlay = $("symOverlay");
 const layerStrip = $("layerStrip");
 const symbolList = $("symbolList");
 const dropZone = $("dropZone");
+const loading  = $("loading");
+function setLoadingProgress(text) {
+  const el = $("loadingProgress");
+  if (el) el.textContent = text;
+}
 
 //---------------------------------------------------------------
 // Layer loading
@@ -229,14 +269,18 @@ state.manifest = null;
 
 async function loadManifest() {
   try {
+    setLoadingProgress("Fetching manifest…");
     const resp = await fetch("manifest.json", { cache: "no-cache" });
     if (!resp.ok) return false;
     const m = await resp.json();
     if (!m.layers || !m.layers.length) return false;
     state.manifest = m;
     if (m.title) document.title = m.title;
+    const total = m.layers.length;
     const layers = [];
-    for (const L of m.layers) {
+    for (let i = 0; i < m.layers.length; i++) {
+      const L = m.layers[i];
+      setLoadingProgress(`Loading layer ${i + 1} / ${total}`);
       const img = await loadImageAsync(L.file);
       layers.push({
         name: L.name || L.file,
@@ -246,14 +290,15 @@ async function loadManifest() {
         hiresLoading: false,
       });
     }
+    setLoadingProgress("Finishing up…");
     await setLayers(layers);
-    // Seed symbols from manifest only if the visitor has no local store yet.
     if (m.symbols && Array.isArray(m.symbols) && !hasLocalSymbols()) {
       state.symbols = m.symbols.map(normalizeSymbol);
       saveSymbolsToLocalStorage();
       renderSymbolList();
       renderSymbolOverlay();
     }
+    loading.classList.add("hidden");
     return true;
   } catch (err) {
     console.log("No manifest.json or failed to load:", err.message);
@@ -274,16 +319,20 @@ async function loadFromFiles(files) {
   const imgs = [...files].filter(f => /\.(png|jpe?g)$/i.test(f.name))
                          .sort((a, b) => a.name.localeCompare(b.name));
   if (!imgs.length) { alert("No image files found."); return; }
+  dropZone.classList.add("hidden");
+  loading.classList.remove("hidden");
   const layers = [];
-  for (const f of imgs) {
+  for (let i = 0; i < imgs.length; i++) {
+    const f = imgs[i];
+    setLoadingProgress(`Loading layer ${i + 1} / ${imgs.length}`);
     const url = URL.createObjectURL(f);
     const img = await loadImageAsync(url);
-    // Use filename stripped of numeric prefix + extension as display name.
     const base = f.name.replace(/\.[^.]+$/, "");
     const name = base.replace(/^\d+[_-]?\s*/, "");
     layers.push({ name: name || base, img, w: img.naturalWidth, h: img.naturalHeight });
   }
   await setLayers(layers);
+  loading.classList.add("hidden");
 }
 
 function extractZ(name) {
@@ -356,8 +405,11 @@ $("folderInput").addEventListener("change", e => loadFromFiles(e.target.files));
 function drawLayer() {
   if (!state.layers.length) return;
   const L = state.layers[state.current];
-  // Prefer hires for the current layer if it's loaded; else low-res.
-  const mainImg = L.imgHires || L.img;
+  // Default: always use low-res for instant layer switches. Only upgrade to
+  // hires if the user opted in via the toolbar toggle and the hires image
+  // has already finished loading.
+  const useHires = state.hiresEnabled && L.imgHires;
+  const mainImg = useHires ? L.imgHires : L.img;
   const mainW = mainImg.naturalWidth || L.w;
   const mainH = mainImg.naturalHeight || L.h;
   canvas.width = mainW;
@@ -384,8 +436,8 @@ function drawLayer() {
   }
   ctx.drawImage(mainImg, 0, 0, mainW, mainH);
   applyView();
-  // Fire-and-forget hires upgrade for the current layer.
-  ensureHiresLoaded(state.current);
+  // Fire-and-forget hires upgrade only when user opted in.
+  if (state.hiresEnabled) ensureHiresLoaded(state.current);
 }
 
 // Load & cache hires image for a layer; when ready, redraw if still current.
@@ -453,7 +505,7 @@ window.addEventListener("mousemove", (ev) => {
     applyView();
   } else if (state.layers.length && ev.target === canvas) {
     const [x, y] = canvasCoords(ev);
-    $("posPill").textContent = `${Math.round(x)}, ${Math.round(y)}`;
+    $("posPill").textContent = `${(x * 100).toFixed(1)}%, ${(y * 100).toFixed(1)}%`;
   }
 });
 
@@ -493,11 +545,13 @@ window.addEventListener("keydown", (ev) => {
 
 viewer.addEventListener("dblclick", () => { if (!state.addMode) recenter(); });
 
+// Return canvas-relative coordinates in NORMALIZED [0, 1] space so symbols
+// are resolution-agnostic (independent of whether hi-res is loaded).
 function canvasCoords(ev) {
   const r = canvas.getBoundingClientRect();
   return [
-    (ev.clientX - r.left) * (canvas.width / r.width),
-    (ev.clientY - r.top)  * (canvas.height / r.height),
+    (ev.clientX - r.left) / r.width,
+    (ev.clientY - r.top)  / r.height,
   ];
 }
 
@@ -549,13 +603,22 @@ function gotoLayer(i, opts = {}) {
 //---------------------------------------------------------------
 
 function normalizeSymbol(s) {
+  let x = Number(s.x) || 0;
+  let y = Number(s.y) || 0;
+  // Legacy migration: if the value looks like a pixel coordinate (> 1),
+  // assume it was captured in the low-res canvas and normalize.
+  const L = state.layers[Math.max(0, Math.min(state.layers.length - 1, Number(s.layer) || 0))];
+  if (L && (x > 1 || y > 1)) {
+    x = x / L.w;
+    y = y / L.h;
+  }
   return {
     id: s.id || crypto.randomUUID(),
     name: String(s.name || "Unnamed"),
     color: s.color || pickColor(),
     layer: Math.max(0, Math.min(state.layers.length - 1, Number(s.layer) || 0)),
-    x: Number(s.x) || 0,
-    y: Number(s.y) || 0,
+    x: Math.max(0, Math.min(1, x)),
+    y: Math.max(0, Math.min(1, y)),
   };
 }
 
@@ -669,12 +732,14 @@ function gotoSymbol(id) {
   if (!s) return;
   state.activeSymbolId = id;
   if (s.layer !== state.current) gotoLayer(s.layer);
-  // Center & zoom to the symbol.
+  // Center on the symbol. s.x/s.y are normalized; convert to canvas pixels.
   const vr = viewer.getBoundingClientRect();
   const targetZoom = Math.max(state.view.zoom, 1.0);
   state.view.zoom = targetZoom;
-  state.view.panX = vr.width  / 2 - s.x * targetZoom;
-  state.view.panY = vr.height / 2 - s.y * targetZoom;
+  const cx = s.x * canvas.width;
+  const cy = s.y * canvas.height;
+  state.view.panX = vr.width  / 2 - cx * targetZoom;
+  state.view.panY = vr.height / 2 - cy * targetZoom;
   applyView();
   renderSymbolList();
 }
@@ -682,19 +747,20 @@ function gotoSymbol(id) {
 function renderSymbolOverlay() {
   overlay.innerHTML = "";
   if (!state.layers.length) return;
-  const L = state.layers[state.current];
   const vr = viewer.getBoundingClientRect();
   const canvasRect = canvas.getBoundingClientRect();
   for (const s of state.symbols) {
     if (s.layer !== state.current) continue;
-    const sx = canvasRect.left - vr.left + (s.x / L.w) * canvasRect.width;
-    const sy = canvasRect.top  - vr.top  + (s.y / L.h) * canvasRect.height;
+    const sx = canvasRect.left - vr.left + s.x * canvasRect.width;
+    const sy = canvasRect.top  - vr.top  + s.y * canvasRect.height;
     const el = document.createElement("div");
     el.className = "pin" + (s.id === state.activeSymbolId ? " active" : "");
     el.style.left = sx + "px"; el.style.top = sy + "px";
-    const dot = document.createElement("div"); dot.className = "dot"; dot.style.background = s.color;
-    const lbl = document.createElement("div"); lbl.className = "lbl"; lbl.textContent = s.name;
-    el.appendChild(dot); el.appendChild(lbl);
+    el.style.background = s.color;
+    el.title = s.name;
+    const lbl = document.createElement("div");
+    lbl.className = "lbl"; lbl.textContent = s.name;
+    el.appendChild(lbl);
     el.onclick = (ev) => { ev.stopPropagation(); gotoSymbol(s.id); };
     el.oncontextmenu = (ev) => { ev.preventDefault(); promptEditSymbol(s.id); };
     overlay.appendChild(el);
@@ -714,7 +780,7 @@ function openSymbolModal(seed, done) {
       <div class="field"><label>Name</label><input id="m_name" value="${esc(seed.name || "")}" autofocus /></div>
       <div class="field"><label>Layer</label><select id="m_layer"></select></div>
       <div class="field"><label>Color</label><input id="m_color" type="color" value="${seed.color || "#ff5252"}" /></div>
-      <div class="field" style="font-size:11px;color:#888">Position: ${Math.round(seed.x)}, ${Math.round(seed.y)}</div>
+      <div class="field" style="font-size:11px;color:#888">Position: ${(seed.x * 100).toFixed(1)}%, ${(seed.y * 100).toFixed(1)}%</div>
       <div class="buttons">
         ${seed.id ? '<button class="del" id="m_del">Delete</button>' : ''}
         <button id="m_cancel">Cancel</button>
@@ -835,8 +901,18 @@ $("onionToggle").addEventListener("change", (e) => {
   drawLayer();
 });
 
-// Boot: try manifest, else wait for drop / picker.
-loadManifest().then(ok => { if (!ok) dropZone.classList.remove("hidden"); });
+$("hiresToggle").addEventListener("change", (e) => {
+  state.hiresEnabled = e.target.checked;
+  drawLayer(); // triggers ensureHiresLoaded if turned on
+});
+
+// Boot: try manifest first; if that fails, hide loader and show the drop-zone.
+loadManifest().then(ok => {
+  if (!ok) {
+    loading.classList.add("hidden");
+    dropZone.classList.remove("hidden");
+  }
+});
 </script>
 </body>
 </html>

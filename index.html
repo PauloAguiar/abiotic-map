@@ -18,8 +18,16 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg);
                font: 13px/1.4 system-ui, sans-serif; user-select: none;
-               -webkit-user-select: none; overscroll-behavior: none;
-               touch-action: none; }
+               -webkit-user-select: none; overscroll-behavior: none; }
+  /* Only the viewer eats touch gestures — sidebar/layer strip still scroll. */
+  #viewer { touch-action: none; }
+  #sidebar, #layerStrip { touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
+  /* Interactive elements must accept selection/focus for correct touch behaviour. */
+  #toolbar label, #toolbar input, #toolbar select,
+  .sym-edit input, .sym-edit select, .sym-row, button {
+    -webkit-user-select: auto; user-select: auto;
+    -webkit-tap-highlight-color: rgba(79,140,255,0.25);
+  }
   #app { display: grid;
          grid-template-columns: 260px 1fr;
          grid-template-rows: 1fr 110px;
@@ -633,8 +641,11 @@ viewer.addEventListener("touchstart", (ev) => {
     return;
   }
   if (ev.touches.length === 1) {
-    ev.preventDefault();
+    // Don't preventDefault yet — we want a click to fire if the user taps
+    // without moving (so pin taps work). Only preventDefault starts once the
+    // movement threshold is crossed in touchmove.
     state.view.panning = true;
+    state.view.moved = false;
     state.view.lastX = ev.touches[0].clientX;
     state.view.lastY = ev.touches[0].clientY;
     state.view.startX = state.view.lastX;
@@ -650,12 +661,20 @@ viewer.addEventListener("touchstart", (ev) => {
 viewer.addEventListener("touchmove", (ev) => {
   if (!state.layers.length) return;
   if (ev.touches.length === 1 && state.view.panning) {
-    ev.preventDefault();
     const t = ev.touches[0];
-    state.view.panX += t.clientX - state.view.lastX;
-    state.view.panY += t.clientY - state.view.lastY;
+    const moved = Math.hypot(
+      t.clientX - state.view.startX,
+      t.clientY - state.view.startY
+    );
+    // 6px threshold: below it we treat the gesture as a tap and let click fire.
+    if (moved > 6) {
+      ev.preventDefault();
+      state.view.moved = true;
+      state.view.panX += t.clientX - state.view.lastX;
+      state.view.panY += t.clientY - state.view.lastY;
+      applyView();
+    }
     state.view.lastX = t.clientX; state.view.lastY = t.clientY;
-    applyView();
   } else if (ev.touches.length === 2) {
     ev.preventDefault();
     const d = touchDist(ev.touches);
@@ -680,12 +699,24 @@ viewer.addEventListener("touchend", (ev) => {
     touchState.pinchCenter = null;
   }
   if (ev.touches.length === 0) {
+    const wasPanning = state.view.panning;
+    const didMove = state.view.moved;
     state.view.panning = false;
+    state.view.moved = false;
+    // Tap (no significant move) on the canvas: deselect active symbol.
+    if (wasPanning && !didMove && ev.target === canvas && state.activeSymbolId) {
+      state.activeSymbolId = null;
+      renderSymbolList();
+      renderSymbolOverlay();
+    }
   } else if (ev.touches.length === 1) {
     // finger-up during pinch: continue panning from the remaining finger
     state.view.panning = true;
+    state.view.moved = false;
     state.view.lastX = ev.touches[0].clientX;
     state.view.lastY = ev.touches[0].clientY;
+    state.view.startX = state.view.lastX;
+    state.view.startY = state.view.lastY;
   }
 });
 
@@ -693,8 +724,8 @@ viewer.addEventListener("touchend", (ev) => {
 $("sidebarToggle").addEventListener("click", () => {
   $("sidebar").classList.toggle("open");
 });
-// Tap outside sidebar (on viewer) closes it on mobile.
-viewer.addEventListener("pointerdown", () => {
+// Close the sidebar when the user taps the map canvas area (mobile only).
+canvas.addEventListener("pointerdown", () => {
   $("sidebar").classList.remove("open");
 });
 
@@ -832,14 +863,27 @@ function pickColor() {
 }
 
 function promptAddSymbol(x, y) {
-  openSymbolModal({ x, y, layer: state.current, color: pickColor(), name: "" }, (result) => {
-    if (!result) return;
-    const sym = normalizeSymbol(result);
-    state.symbols.push(sym);
-    saveSymbolsToLocalStorage();
-    state.activeSymbolId = sym.id;
-    renderSymbolList();
-    renderSymbolOverlay();
+  // Create immediately with a placeholder name, select it, and let the user
+  // rename/recolor inline in the sidebar. Much better than a modal on mobile
+  // (where the sidebar was blocking the map when the modal wanted a tap).
+  const sym = normalizeSymbol({
+    x, y, layer: state.current, color: pickColor(), name: "New symbol",
+  });
+  state.symbols.push(sym);
+  saveSymbolsToLocalStorage();
+  state.activeSymbolId = sym.id;
+  renderSymbolList();
+  renderSymbolOverlay();
+  // Open the sidebar on mobile so the user can rename the fresh symbol.
+  const sb = $("sidebar");
+  if (sb && window.matchMedia("(max-width: 700px)").matches) {
+    sb.classList.add("open");
+  }
+  // Focus the name field for an immediate rename.
+  requestAnimationFrame(() => {
+    const active = symbolList.querySelector(".sym-row.active");
+    const input = active && active.parentElement && active.parentElement.querySelector(".sym-edit input[type=text]");
+    if (input) { input.focus(); input.select(); }
   });
 }
 
@@ -866,7 +910,13 @@ function setAddMode(on) {
   $("btnAddSymbol").textContent = state.addMode ? "Click on map..." : "+ Add";
 }
 
-$("btnAddSymbol").onclick = () => setAddMode(!state.addMode);
+$("btnAddSymbol").onclick = () => {
+  setAddMode(!state.addMode);
+  if (state.addMode && window.matchMedia("(max-width: 700px)").matches) {
+    // Dismiss the sidebar so the user can tap the map.
+    $("sidebar").classList.remove("open");
+  }
+};
 window.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.addMode) setAddMode(false); });
 
 $("symSearch").addEventListener("input", (e) => {

@@ -575,7 +575,7 @@ window.addEventListener("mousemove", (ev) => {
     applyView();
   } else if (state.layers.length && ev.target === canvas) {
     const [x, y] = canvasCoords(ev);
-    $("posPill").textContent = `${(x * 100).toFixed(1)}%, ${(y * 100).toFixed(1)}%`;
+    $("posPill").textContent = `${x.toFixed(3)}, ${y.toFixed(3)}`;
   }
 });
 
@@ -926,7 +926,7 @@ function openSymbolModal(seed, done) {
       <div class="field"><label>Name</label><input id="m_name" value="${esc(seed.name || "")}" autofocus /></div>
       <div class="field"><label>Layer</label><select id="m_layer"></select></div>
       <div class="field"><label>Color</label><input id="m_color" type="color" value="${seed.color || "#ff5252"}" /></div>
-      <div class="field" style="font-size:11px;color:#888">Position: ${(seed.x * 100).toFixed(1)}%, ${(seed.y * 100).toFixed(1)}%</div>
+      <div class="field" style="font-size:11px;color:#888">Position: ${seed.x.toFixed(3)}, ${seed.y.toFixed(3)}</div>
       <div class="buttons">
         ${seed.id ? '<button class="del" id="m_del">Delete</button>' : ''}
         <button id="m_cancel">Cancel</button>
